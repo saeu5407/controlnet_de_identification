@@ -6,125 +6,22 @@ from typing import Optional, Union, List, Any, Callable, Dict
 import torch
 import json
 
-class ImageProcesserV1():
-    def __init__(self,
-                 device: Union[torch.device, None] = None,
-                 height: Optional[int] = 512,
-                 width: Optional[int] = 512):
-        super(ImageProcesserV1, self).__init__()
-        self.device = device if device is not None else torch.device("cuda" if torch.cuda.is_available() else "cpu")
-        self.openpose = None
-        self.height = height
-        self.width = width
-        print("set image processer")
-
-    def get_rgb_from_rgba(self,
-                          image: Union[np.ndarray, Image.Image]):
-        image_array = np.array(image)
-        rgb_image_array = image_array[:, :, :3]
-        # TODO: 반투명도 조절하는 걸로 함수 변경해야 함
-        return Image.fromarray(rgb_image_array)
-
-    def open(self,
-             image_path: Union[str, Image.Image]):
-        image = Image.open(image_path) if type(image_path) == str else image_path
-        if np.array(image).shape[2] == 4:
-            image = self.get_rgb_from_rgba(image)
-        return image
-
-    def preprocess(self,
-                   image_path: Union[str, Image.Image, np.ndarray],
-                   dtype: Union[torch.dtype, None],
-                   do_classifier_free_guidance: Optional[bool] = False,
-                   height: Optional[int] = None,
-                   width: Optional[int] = None,
-                   ):
-        if height is None:
-            height = self.height
-        if width is None:
-            width = self.width
-
-        if type(image_path) != np.ndarray:
-            image = self.open(image_path)
-            image = np.array(image)
-        else:
-            image = image_path
-
-        print(image.shape)
-        print(width, height)
-        image = cv2.resize(image, dsize=(width, height))
-
-        image = torch.from_numpy(image).unsqueeze(0)
-        image = image.type(dtype)
-        image /= 255.0
-        image = image.permute(0, 3, 1, 2)
-        image = image.to(self.device)
-
-        if do_classifier_free_guidance:
-            image = torch.cat([image] * 2)
-
-        return image
-
-    def postprocess(self,
-                    output: Union[np.ndarray, torch.Tensor]):
-        if type(output) == np.ndarray:
-            output = torch.tensor(output)
-        output = (output / 2 + 0.5).clamp(0, 1)
-        output = output.cpu().permute(0, 2, 3, 1).float().numpy()
-        output = (output * 255).round().astype("uint8")
-        output = Image.fromarray(output[0])
-        return output
-
-    def get_canny_edges(self,
-                        image: Union[np.ndarray, Image.Image],
-                        low_threshold: Optional[int] = 100,
-                        high_threshold: Optional[int] = 200,
-                        return_image: Optional[bool] = False):
-        if type(image) == Image.Image:
-            image = np.array(image)
-        edges = cv2.Canny(image, low_threshold, high_threshold)
-        edges = edges[:, :, None]
-        edges = np.concatenate([edges, edges, edges], axis=2)
-        if return_image:
-            edges = Image.fromarray(edges)
-        return edges
-
-    # TODO: get_depth_map 인풋 타입 설정 및 이에 맞춰 코드 수정 필요
-    def get_depth_map(self, image, depth_estimator=pipeline("depth-estimation")):
-        depth = depth_estimator(image)["depth"]
-        depth = np.array(depth)
-        depth = depth[:, :, None]
-        depth_map = np.concatenate([depth, depth, depth], axis=2)
-        return Image.fromarray(depth_map)
-
-    def get_openpose(self,
-                     image: Union[np.ndarray, Image.Image],
-                     ):
-        if self.openpose is None:
-            from ..annotator.openpose import OpenposeDetector
-            self.openpose = OpenposeDetector()
-
-        if type(image) is Image.Image:
-            image = self.open(image)
-            image = np.array(image)
-
-        image = HWC3(image)
-        image, _ = self.openpose(resize_image(image, image.shape[0]))
-        image = HWC3(image)
-        return image
-
 class ImageProcessor():
     def __init__(self,
                  device: Union[torch.device, None] = None,
                  resize: Union[tuple, list] = (512, 512),
                  facial_landmarks: Optional[bool] = False,
                  face_detection: Optional[bool] = False,
+                 max_num_faces: Optional[int] = 1,
+                 min_detection_confidence: Optional[float] = 0.7
                  ):
         super(ImageProcessor, self).__init__()
         self.device = device if device is not None else torch.device("cuda" if torch.cuda.is_available() else "cpu")
         self.resize = resize
         self.facial_landmarks = facial_landmarks
         self.face_detection = face_detection
+        self.max_num_faces = max_num_faces
+        self.min_detection_confidence = min_detection_confidence
 
         h, w = resize
         h_resize = int(h // 64 * 64)
@@ -136,7 +33,8 @@ class ImageProcessor():
         if self.facial_landmarks:
             import mediapipe as mp
             self.mp_face_mesh = mp.solutions.face_mesh
-            self.face_mesh = self.mp_face_mesh.FaceMesh(refine_landmarks=True)
+            self.face_mesh = self.mp_face_mesh.FaceMesh(refine_landmarks=True, max_num_faces=self.max_num_faces,
+                                                        min_detection_confidence=self.min_detection_confidence)
 
         if self.face_detection:
             import mediapipe as mp
@@ -223,7 +121,6 @@ class ImageProcessor():
 
     def get_facial_landmarks(self,
                              image: Union[np.ndarray, str, Image.Image],
-                             use_segmentation_map: Optional[bool] = True,
                              use_facial_landmark: Optional[bool] = True,
                              return_image: Optional[bool] = True,
                              max_num_faces: Union[int, None] = None):
@@ -254,6 +151,12 @@ class ImageProcessor():
 
         landmark_list = []
 
+        # 이미지 준비
+        height, width, _ = image.shape
+        landmark_image = np.zeros((height, width, 3), dtype=np.uint8)
+        inpaint_image = image.copy()
+        de_identification_image = image.copy()
+
         # 검출된 얼굴에 대해 마스크 생성
         if results.multi_face_landmarks:
             len_result = len(results.multi_face_landmarks)
@@ -261,28 +164,33 @@ class ImageProcessor():
             if max_num_faces is not None:
                 len_result = min(int(max_num_faces), len_result)
 
-            height, width, _ = image.shape
-            mask = np.zeros((height, width), dtype=np.uint8)
-
             # 루프로 해 두었지만 랜드마크 처리도 해야되니 그냥 하나라고 생각하자
             for face_landmarks in results.multi_face_landmarks[:len_result]:
+
+                mask = np.zeros((height, width), dtype=np.int32)
 
                 landmark_dict = {}
                 points = [(int(landmark.x * width), int(landmark.y * height)) for landmark in face_landmarks.landmark]
 
-                if use_segmentation_map:
-                    i_poly = np.array([points[i] for i in outside], dtype=np.int32)
-                    hull = cv2.convexHull(i_poly)
-                    cv2.fillConvexPoly(mask, hull, 255)
-                    image[mask == 255] = (0, 0, 0)
-                    landmark_dict['outside'] = i_poly.tolist()
+                i_poly = np.array([points[i] for i in outside], dtype=np.int32)
+                hull = cv2.convexHull(i_poly)
+                cv2.fillConvexPoly(mask, hull, 255)
+
+                # landmark_image[mask == 255] = (0, 0, 0) # 얘는 마스크 안쓰는 거 고민하자
+                cv2.polylines(landmark_image, [i_poly], True, (255, 255, 255), 1, cv2.LINE_AA)
+
+                inpaint_image[mask == 255] = (0, 0, 0)
+                de_identification_image[mask == 255] = (0, 0, 0)
+                landmark_dict['outside'] = i_poly.tolist()
 
                 if use_facial_landmark:
                     # mouth
                     mouth_poly = np.array([points[i] for i in mouth], dtype=np.int32)
                     mouth_outside_poly = np.array([points[i] for i in mouth_outside], dtype=np.int32)
-                    cv2.polylines(image, [mouth_poly], True, (255, 255, 0), 1, cv2.LINE_AA)
-                    cv2.polylines(image, [mouth_outside_poly], True, (255, 255, 0), 1, cv2.LINE_AA)
+                    cv2.polylines(landmark_image, [mouth_poly], True, (255, 255, 0), 1, cv2.LINE_AA)
+                    cv2.polylines(landmark_image, [mouth_outside_poly], True, (255, 255, 0), 1, cv2.LINE_AA)
+                    cv2.polylines(de_identification_image, [mouth_poly], True, (255, 255, 0), 1, cv2.LINE_AA)
+                    cv2.polylines(de_identification_image, [mouth_outside_poly], True, (255, 255, 0), 1, cv2.LINE_AA)
                     landmark_dict['mouth'] = mouth_poly.tolist()
                     landmark_dict['mouth_outside'] = mouth_outside_poly.tolist()
 
@@ -290,32 +198,39 @@ class ImageProcessor():
                     # TODO: pupil이 지금은 직사각형 poly draw라 나중에 개선 필요
                     left_eye_poly = np.array([points[i] for i in left_eye], dtype=np.int32)
                     left_pupil_poly = np.array([points[i] for i in left_pupil], dtype=np.int32)
-                    cv2.polylines(image, [left_eye_poly], True, (0, 255, 0), 1, cv2.LINE_AA)
-                    cv2.polylines(image, [left_pupil_poly], True, (0, 255, 0), 1, cv2.LINE_AA)
+                    cv2.polylines(landmark_image, [left_eye_poly], True, (0, 255, 0), 1, cv2.LINE_AA)
+                    cv2.polylines(landmark_image, [left_pupil_poly], True, (0, 255, 0), 1, cv2.LINE_AA)
+                    cv2.polylines(de_identification_image, [left_eye_poly], True, (0, 255, 0), 1, cv2.LINE_AA)
+                    cv2.polylines(de_identification_image, [left_pupil_poly], True, (0, 255, 0), 1, cv2.LINE_AA)
                     landmark_dict['left_eye'] = left_eye_poly.tolist()
                     landmark_dict['left_pupil'] = left_pupil_poly.tolist()
 
                     # right
                     right_eye_poly = np.array([points[i] for i in right_eye], dtype=np.int32)
                     right_pupil_poly = np.array([points[i] for i in right_pupil], dtype=np.int32)
-                    cv2.polylines(image, [right_eye_poly], True, (0, 0, 255), 1, cv2.LINE_AA)
-                    cv2.polylines(image, [right_pupil_poly], True, (0, 0, 255), 1, cv2.LINE_AA)
+                    cv2.polylines(landmark_image, [right_eye_poly], True, (0, 0, 255), 1, cv2.LINE_AA)
+                    cv2.polylines(landmark_image, [right_pupil_poly], True, (0, 0, 255), 1, cv2.LINE_AA)
+                    cv2.polylines(de_identification_image, [right_eye_poly], True, (0, 0, 255), 1, cv2.LINE_AA)
+                    cv2.polylines(de_identification_image, [right_pupil_poly], True, (0, 0, 255), 1, cv2.LINE_AA)
                     landmark_dict['right_eye'] = right_eye_poly.tolist()
                     landmark_dict['right_pupil'] = right_pupil_poly.tolist()
 
                     # nose
                     nose_poly = np.array([points[i] for i in nose], dtype=np.int32)
                     for i in range(len(nose_poly[:-1])):
-                        cv2.line(image, nose_poly[i], nose_poly[i+1], (255, 0, 0), 1, cv2.LINE_AA)
+                        cv2.line(landmark_image, nose_poly[i], nose_poly[i+1], (255, 0, 0), 1, cv2.LINE_AA)
+                        cv2.line(de_identification_image, nose_poly[i], nose_poly[i+1], (255, 0, 0), 1, cv2.LINE_AA)
                     landmark_dict['nose'] = nose_poly.tolist()
 
                     # left eyebrow
                     left_eyebrow_poly = np.array([points[i] for i in left_eyebrow], dtype=np.int32)
                     left_eyebrow_up_poly = np.array([points[i] for i in left_eyebrow_up], dtype=np.int32)
                     for i in range(len(left_eyebrow_poly[:-1])):
-                        cv2.line(image, left_eyebrow_poly[i], left_eyebrow_poly[i+1], (0, 255, 255), 1, cv2.LINE_AA)
+                        cv2.line(landmark_image, left_eyebrow_poly[i], left_eyebrow_poly[i+1], (0, 255, 255), 1, cv2.LINE_AA)
+                        cv2.line(de_identification_image, left_eyebrow_poly[i], left_eyebrow_poly[i+1], (0, 255, 255), 1, cv2.LINE_AA)
                     for i in range(len(left_eyebrow_up_poly[:-1])):
-                        cv2.line(image, left_eyebrow_up_poly[i], left_eyebrow_up_poly[i+1], (0, 255, 255), 1, cv2.LINE_AA)
+                        cv2.line(landmark_image, left_eyebrow_up_poly[i], left_eyebrow_up_poly[i+1], (0, 255, 255), 1, cv2.LINE_AA)
+                        cv2.line(de_identification_image, left_eyebrow_up_poly[i], left_eyebrow_up_poly[i+1], (0, 255, 255), 1, cv2.LINE_AA)
                     landmark_dict['left_eyebrow'] = left_eyebrow_poly.tolist()
                     landmark_dict['left_eyebrow_up'] = left_eyebrow_up_poly.tolist()
 
@@ -323,21 +238,25 @@ class ImageProcessor():
                     right_eyebrow_poly = np.array([points[i] for i in right_eyebrow], dtype=np.int32)
                     right_eyebrow_up_poly = np.array([points[i] for i in right_eyebrow_up], dtype=np.int32)
                     for i in range(len(right_eyebrow_poly[:-1])):
-                        cv2.line(image, right_eyebrow_poly[i], right_eyebrow_poly[i+1], (255, 0, 255), 1, cv2.LINE_AA)
+                        cv2.line(landmark_image, right_eyebrow_poly[i], right_eyebrow_poly[i+1], (255, 0, 255), 1, cv2.LINE_AA)
+                        cv2.line(de_identification_image, right_eyebrow_poly[i], right_eyebrow_poly[i+1], (255, 0, 255), 1, cv2.LINE_AA)
                     for i in range(len(right_eyebrow_up_poly[:-1])):
-                        cv2.line(image, right_eyebrow_up_poly[i], right_eyebrow_up_poly[i+1], (255, 0, 255), 1, cv2.LINE_AA)
+                        cv2.line(landmark_image, right_eyebrow_up_poly[i], right_eyebrow_up_poly[i+1], (255, 0, 255), 1, cv2.LINE_AA)
+                        cv2.line(de_identification_image, right_eyebrow_up_poly[i], right_eyebrow_up_poly[i+1], (255, 0, 255), 1, cv2.LINE_AA)
                     landmark_dict['right_eyebrow'] = right_eyebrow_poly.tolist()
                     landmark_dict['right_eyebrow_up'] = right_eyebrow_up_poly.tolist()
 
                     landmark_list.append(landmark_dict)
             if return_image:
-                image = Image.fromarray(image)
+                landmark_image = Image.fromarray(landmark_image)
+                inpaint_image = Image.fromarray(inpaint_image)
+                de_identification_image = Image.fromarray(de_identification_image)
                 landmark_list = landmark_list[0]
         else:
-                image = None
-                landmark_list = []
+            landmark_image, inpaint_image, de_identification_image = None, None, None
+            landmark_list = []
 
-        return image, landmark_list
+        return landmark_image, inpaint_image, de_identification_image, landmark_list
 
     def get_face_crop_image(self,
                             image: Union[np.ndarray, str, Image.Image],
@@ -394,14 +313,13 @@ class ImageProcessor():
 
 if __name__ == '__main__':
 
-    image_processor = ImageProcessor(facial_landmarks=True, face_detection=True)
-    image_path = '../dataset/sample2.png'
+    image_processor = ImageProcessor(facial_landmarks=True, face_detection=True, max_num_faces=10)
+    image_path = '../../datasets/test/sample.png'
 
-    facial_landmark_image, landmark_points = image_processor.get_facial_landmarks(image=image_path, max_num_faces=1, return_image=True)
-    facial_landmark_image.save('../../output/sample_facial_landmark.png')
-    with open('../../output/landmark.json', 'w') as f:
+    landmark_image, inpaint_image, de_identification_image, landmark_points = image_processor.get_facial_landmarks(image=image_path, max_num_faces=10, return_image=True)
+    landmark_image.save('../../datasets/test/sample_landmark.png')
+    inpaint_image.save('../../datasets/test/sample_inpaint.png')
+    de_identification_image.save('../../datasets/test/sample_de_identification.png')
+
+    with open('../../datasets/test/landmark.json', 'w') as f:
         json.dump(landmark_points, f)
-
-    face_detection_image, bboxs = image_processor.get_face_crop_image(image=image_path, max_num_faces=1, ad=2, return_image=True)
-    print(bboxs)
-    face_detection_image.save('../../output/sample_face_detection.png')
