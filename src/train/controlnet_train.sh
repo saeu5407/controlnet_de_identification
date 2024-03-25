@@ -1,6 +1,6 @@
 accelerate launch controlnet_train.py \
  --pretrained_model_name_or_path="stabilityai/stable-diffusion-2-1-base" \
- --output_dir="controlnet-landmark" \
+ --output_dir="controlnet_landmark" \
  --dataset_name=saeu5407/celebahq_landmark4controlnet \
  --conditioning_image_column=landmark_image \
  --image_column=crop_image \
@@ -8,11 +8,11 @@ accelerate launch controlnet_train.py \
  --resolution=256 \
  --mixed_precision="fp16" \
  --learning_rate=1e-5 \
- --validation_image "../../output/sample2_facial_landmark.png" "../../output/sample_facial_landmark.png" \
+ --validation_image "../../datasets/test/sample_" \
  --validation_prompt "a women wearing white shirt" "a women wearing white shirt" \
  --train_batch_size=4 \
  --num_train_epochs=100 \
- --tracker_project_name="controlnet_ld" \
+ --tracker_project_name="controlnet_landmark" \
  --enable_xformers_memory_efficient_attention \
  --checkpointing_steps=10000 \
  --checkpoints_total_limit=3 \
@@ -22,5 +22,5 @@ accelerate launch controlnet_train.py \
  --enable_xformers_memory_efficient_attention \
  --set_grads_to_none \
  --gradient_accumulation_steps=4 \
- --report_to tensorboard \
+ --report_to wandb \
  --push_to_hub

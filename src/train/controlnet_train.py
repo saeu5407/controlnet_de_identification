@@ -611,6 +611,10 @@ def make_train_dataset(args, tokenizer, accelerator):
     # We need to tokenize inputs and targets.
     column_names = dataset["train"].column_names
 
+    # 잠시 제거
+    # 랜드마크 사용 시 주석 처리
+    # dataset["train"] = dataset["train"].remove_columns(["landmarks"])
+
     # 6. Get the column names for input/target.
     if args.image_column is None:
         image_column = column_names[0]
@@ -685,12 +689,12 @@ def make_train_dataset(args, tokenizer, accelerator):
         conditioning_images = [image.convert("RGB") for image in examples[conditioning_image_column]]
         conditioning_images = [conditioning_image_transforms(image) for image in conditioning_images]
 
-        landmark_outside = [torch.tensor(json.loads(outside)) for outside in examples['outside']]
+        # landmark_outside = [torch.tensor(json.loads(outside)) for outside in examples['outside']]
 
         examples["pixel_values"] = images
         examples["conditioning_pixel_values"] = conditioning_images
         examples["input_ids"] = tokenize_captions(examples)
-        examples["landmark_outside"] = landmark_outside
+        # examples["landmark_outside"] = landmark_outside
 
         return examples
 
@@ -712,13 +716,13 @@ def collate_fn(examples):
 
     input_ids = torch.stack([example["input_ids"] for example in examples])
 
-    landmark_outside = torch.stack([example["landmark_outside"] for example in examples])
+    # landmark_outside = torch.stack([example["landmark_outside"] for example in examples])
 
     return {
         "pixel_values": pixel_values,
         "conditioning_pixel_values": conditioning_pixel_values,
         "input_ids": input_ids,
-        "landmark_outside": landmark_outside,
+        # "landmark_outside": landmark_outside,
     }
 
 
