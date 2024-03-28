@@ -314,12 +314,12 @@ class ImageProcessor():
 if __name__ == '__main__':
 
     image_processor = ImageProcessor(facial_landmarks=True, face_detection=True, max_num_faces=10)
-    image_path = '../../datasets/test/sample.png'
+    image_path = '../../datasets/test/sample2.jpg'
 
     landmark_image, inpaint_image, de_identification_image, landmark_points = image_processor.get_facial_landmarks(image=image_path, max_num_faces=10, return_image=True)
-    landmark_image.save('../../datasets/test/sample_landmark.png')
-    inpaint_image.save('../../datasets/test/sample_inpaint.png')
-    de_identification_image.save('../../datasets/test/sample_de_identification.png')
+    landmark_image.save('../../datasets/test/sample2_landmark.png')
+    inpaint_image.save('../../datasets/test/sample2_inpaint.png')
+    de_identification_image.save('../../datasets/test/sample2_de_identification.png')
 
     with open('../../datasets/test/landmark.json', 'w') as f:
         json.dump(landmark_points, f)

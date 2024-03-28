@@ -1,22 +1,22 @@
 accelerate launch controlnet_train.py \
  --pretrained_model_name_or_path="stabilityai/stable-diffusion-2-1-base" \
- --output_dir="controlnet_landmark" \
- --dataset_name=saeu5407/celebahq_landmark4controlnet \
- --conditioning_image_column=landmark_image \
- --image_column=crop_image \
- --caption_column=prompt_text \
+ --output_dir="controlnet-landmark" \
+ --dataset_name=saeu5407/celebahq_de_identification \
+ --conditioning_image_column=landmark \
+ --image_column=default \
+ --caption_column=text \
  --resolution=256 \
  --mixed_precision="fp16" \
  --learning_rate=1e-5 \
- --validation_image "../../datasets/test/sample_" \
- --validation_prompt "a women wearing white shirt" "a women wearing white shirt" \
- --train_batch_size=4 \
+ --validation_image "../../datasets/test/sample_landmark.png" "../../datasets/test/sample2_landmark.png"\
+ --validation_prompt "a men in cafe" "a middle-aged black rapper in a black hat" \
+ --train_batch_size=50 \
  --num_train_epochs=100 \
- --tracker_project_name="controlnet_landmark" \
+ --tracker_project_name="controlnet-landmark" \
  --enable_xformers_memory_efficient_attention \
- --checkpointing_steps=10000 \
+ --checkpointing_steps=20000 \
  --checkpoints_total_limit=3 \
- --validation_steps=10000 \
+ --validation_steps=20000 \
  --use_8bit_adam \
  --gradient_checkpointing \
  --enable_xformers_memory_efficient_attention \
