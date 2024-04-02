@@ -10,8 +10,8 @@ accelerate launch controlnet_train.py \
  --learning_rate=1e-5 \
  --validation_image "../../datasets/test/sample_landmark.png" "../../datasets/test/sample2_landmark.png"\
  --validation_prompt "a men in cafe" "a middle-aged black rapper in a black hat" \
- --train_batch_size=50 \
- --num_train_epochs=100 \
+ --train_batch_size=4 \
+ --num_train_epochs=50 \
  --tracker_project_name="controlnet-landmark" \
  --enable_xformers_memory_efficient_attention \
  --checkpointing_steps=20000 \
