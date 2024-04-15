@@ -11,12 +11,12 @@ accelerate launch controlnet_train.py \
  --validation_image "../../datasets/test/sample_landmark.png" "../../datasets/test/sample2_landmark.png"\
  --validation_prompt "a men in cafe" "a middle-aged black rapper in a black hat" \
  --train_batch_size=4 \
- --num_train_epochs=50 \
+ --num_train_epochs=100 \
  --tracker_project_name="controlnet-landmark" \
  --enable_xformers_memory_efficient_attention \
- --checkpointing_steps=20000 \
+ --checkpointing_steps=30000 \
  --checkpoints_total_limit=3 \
- --validation_steps=20000 \
+ --validation_steps=30000 \
  --use_8bit_adam \
  --gradient_checkpointing \
  --enable_xformers_memory_efficient_attention \
