@@ -172,16 +172,21 @@ class ImageProcessor():
                 landmark_dict = {}
                 points = [(int(landmark.x * width), int(landmark.y * height)) for landmark in face_landmarks.landmark]
 
-                i_poly = np.array([points[i] for i in outside], dtype=np.int32)
+                # 이건 outside만 뽑아서 convexHull하는건데 문제는 outside가 꼭 최대외각이 아닌 경우가 있어서 랜드마크가 convexHull보다 더 밖에 있는 경우가 발생
+                # i_poly = np.array([points[i] for i in outside], dtype=np.int32)
+                # 전체를 사용해서 convexHull을 하자
+                i_poly = np.array(points, dtype=np.int32)
                 hull = cv2.convexHull(i_poly)
                 cv2.fillConvexPoly(mask, hull, 255)
 
-                # landmark_image[mask == 255] = (0, 0, 0) # 얘는 마스크 안쓰는 거 고민하자
-                cv2.polylines(landmark_image, [i_poly], True, (255, 255, 255), 1, cv2.LINE_AA)
-
                 inpaint_image[mask == 255] = (0, 0, 0)
                 de_identification_image[mask == 255] = (0, 0, 0)
-                landmark_dict['outside'] = i_poly.tolist()
+
+                # 랜드마크쪽이 문제인데 이쪽은 그냥 원래 outside를 사용하는 방안으로 고려
+                outside_poly = np.array([points[i] for i in outside], dtype=np.int32)
+                # landmark_image[mask == 255] = (0, 0, 0) # 얘는 마스크 안쓰는 거 고민하자
+                cv2.polylines(landmark_image, [outside_poly], True, (255, 255, 255), 1, cv2.LINE_AA)
+                landmark_dict['outside'] = outside_poly.tolist()
 
                 if use_facial_landmark:
                     # mouth

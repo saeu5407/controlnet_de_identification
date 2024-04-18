@@ -8,8 +8,8 @@ accelerate launch controlnet_train.py \
  --resolution=256 \
  --mixed_precision="fp16" \
  --learning_rate=1e-5 \
- --validation_image "../../datasets/test/sample_de_identification.png" "../../datasets/test/sample2_de_identification.png"\
- --validation_prompt "a men in cafe" "a middle-aged black rapper in a black hat" \
+ --validation_image "../../datasets/test/sample2_de_identification.png" "../../datasets/test/sample_de_identification.png" \
+ --validation_prompt "a middle-aged black rapper in a black hat" "a men in cafe" \
  --train_batch_size=4 \
  --num_train_epochs=100 \
  --tracker_project_name="controlnet-de-identification" \
@@ -21,6 +21,6 @@ accelerate launch controlnet_train.py \
  --gradient_checkpointing \
  --enable_xformers_memory_efficient_attention \
  --set_grads_to_none \
- --gradient_accumulation_steps=4 \
- --report_to wandb \
- --push_to_hub
+ --gradient_accu
+ --push_to_hubmulation_steps=4 \
+ --report_to wandb
